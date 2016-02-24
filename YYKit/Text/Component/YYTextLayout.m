@@ -623,8 +623,8 @@ dispatch_semaphore_signal(_lock);
         size.height += rect.origin.y;
         if (size.width < 0) size.width = 0;
         if (size.height < 0) size.height = 0;
-        size.width = ceil(size.width);
-        size.height = ceil(size.height);
+        size.width = CGFloatPixelCeil(size.width);
+        size.height = CGFloatPixelCeil(size.height);
         textBoundingSize = size;
     }
     
@@ -1120,6 +1120,28 @@ fail:
         }
     }
     return RTL;
+}
+
+/**
+ Correct the range's edge.
+ */
+- (YYTextRange *)_correctedRangeWithEdge:(YYTextRange *)range {
+    NSRange visibleRange = self.visibleRange;
+    YYTextPosition *start = range.start;
+    YYTextPosition *end = range.end;
+    
+    if (start.offset == visibleRange.location && start.affinity == YYTextAffinityBackward) {
+        start = [YYTextPosition positionWithOffset:start.offset affinity:YYTextAffinityForward];
+    }
+    
+    if (end.offset == visibleRange.location + visibleRange.length && start.affinity == YYTextAffinityForward) {
+        end = [YYTextPosition positionWithOffset:end.offset affinity:YYTextAffinityBackward];
+    }
+    
+    if (start != range.start || end != range.end) {
+        range = [YYTextRange rangeWithStart:start end:end];
+    }
+    return range;
 }
 
 - (NSUInteger)lineIndexForRow:(NSUInteger)row {
@@ -1833,6 +1855,8 @@ fail:
 }
 
 - (CGRect)firstRectForRange:(YYTextRange *)range {
+    range = [self _correctedRangeWithEdge:range];
+    
     NSUInteger startLineIndex = [self lineIndexForPosition:range.start];
     NSUInteger endLineIndex = [self lineIndexForPosition:range.end];
     if (startLineIndex == NSNotFound || endLineIndex == NSNotFound) return CGRectNull;
@@ -1908,6 +1932,8 @@ fail:
 }
 
 - (NSArray *)selectionRectsForRange:(YYTextRange *)range {
+    range = [self _correctedRangeWithEdge:range];
+    
     BOOL isVertical = _container.verticalForm;
     NSMutableArray *rects = [NSMutableArray array];
     if (!range) return rects;
@@ -2766,6 +2792,20 @@ static void YYTextDrawDecoration(YYTextLayout *layout, CGContextRef context, CGS
             if (glyphCount == 0) continue;
             
             NSDictionary *attrs = (id)CTRunGetAttributes(run);
+            
+            /*
+             Sometimes CoreText may convert CGColor to UIColor for `kCTForegroundColorAttributeName`
+             attribute in iOS7. This should be a bug of CoreText, and may cause crash. Here's a workaround.
+             */
+            NSObject *tmpColor = attrs[(id)kCTForegroundColorAttributeName];
+            if ([tmpColor respondsToSelector:@selector(CGColor)]) {
+                CGColorRef cgColor = ((UIColor *)tmpColor).CGColor;
+                if (!cgColor) cgColor = [UIColor blackColor].CGColor;
+                NSMutableDictionary *tmpAttrs = attrs.mutableCopy;
+                tmpAttrs[(id)kCTForegroundColorAttributeName] = (__bridge id)(cgColor);
+                attrs = tmpAttrs;
+            }
+            
             YYTextDecoration *underline = attrs[YYTextUnderlineAttributeName];
             YYTextDecoration *strikethrough = attrs[YYTextStrikethroughAttributeName];
             
