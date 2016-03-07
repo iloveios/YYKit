@@ -132,7 +132,7 @@ static force_inline NSNumber *YYNSNumberCreateFromID(__unsafe_unretained id valu
 }
 
 /// Parse string to date.
-static NSDate *YYNSDateFromString(__unsafe_unretained NSString *string) {
+static force_inline NSDate *YYNSDateFromString(__unsafe_unretained NSString *string) {
     typedef NSDate* (^YYNSDateParseBlock)(NSString *string);
     #define kParserNum 32
     static YYNSDateParseBlock blocks[kParserNum + 1] = {0};
@@ -357,15 +357,13 @@ static force_inline id YYValueForMultiKeys(__unsafe_unretained NSDictionary *dic
     }
     
     if (propertyInfo.getter) {
-        SEL sel = NSSelectorFromString(propertyInfo.getter);
-        if ([classInfo.cls instancesRespondToSelector:sel]) {
-            meta->_getter = sel;
+        if ([classInfo.cls instancesRespondToSelector:propertyInfo.getter]) {
+            meta->_getter = propertyInfo.getter;
         }
     }
     if (propertyInfo.setter) {
-        SEL sel = NSSelectorFromString(propertyInfo.setter);
-        if ([classInfo.cls instancesRespondToSelector:sel]) {
-            meta->_setter = sel;
+        if ([classInfo.cls instancesRespondToSelector:propertyInfo.setter]) {
+            meta->_setter = propertyInfo.setter;
         }
     }
     
@@ -406,6 +404,7 @@ static force_inline id YYValueForMultiKeys(__unsafe_unretained NSDictionary *dic
 /// A class info in object model.
 @interface _YYModelMeta : NSObject {
     @package
+    YYClassInfo *_classInfo;
     /// Key:mapped key and key path, Value:_YYModelPropertyInfo.
     NSDictionary *_mapper;
     /// Array<_YYModelPropertyMeta>, all property meta of this model.
@@ -556,6 +555,7 @@ static force_inline id YYValueForMultiKeys(__unsafe_unretained NSDictionary *dic
     if (keyPathPropertyMetas) _keyPathPropertyMetas = keyPathPropertyMetas;
     if (multiKeysPropertyMetas) _multiKeysPropertyMetas = multiKeysPropertyMetas;
     
+    _classInfo = classInfo;
     _keyMappedCount = _allPropertyMetas.count;
     _nsType = YYClassGetNSType(cls);
     _hasCustomTransformFromDictionary = ([cls instancesRespondToSelector:@selector(modelCustomTransformFromDictionary:)]);
@@ -578,7 +578,7 @@ static force_inline id YYValueForMultiKeys(__unsafe_unretained NSDictionary *dic
     dispatch_semaphore_wait(lock, DISPATCH_TIME_FOREVER);
     _YYModelMeta *meta = CFDictionaryGetValue(cache, (__bridge const void *)(cls));
     dispatch_semaphore_signal(lock);
-    if (!meta) {
+    if (!meta || meta->_classInfo.needUpdate) {
         meta = [[_YYModelMeta alloc] initWithClass:cls];
         if (meta) {
             dispatch_semaphore_wait(lock, DISPATCH_TIME_FOREVER);
